@@ -39,7 +39,7 @@ Resources:
       FunctionName: text-to-sql-chatbot
       Handler: src.main.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
-      Runtime: python3.9
+      Runtime: python3.11 # Changed from python3.9
       Timeout: 30
       MemorySize: 512
       Environment:
