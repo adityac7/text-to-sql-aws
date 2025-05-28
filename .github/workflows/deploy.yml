@@ -23,6 +23,21 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
       
+      - name: Check and delete stack if in ROLLBACK_COMPLETE state
+        run: |
+          # Check if stack exists and is in ROLLBACK_COMPLETE state
+          if aws cloudformation describe-stacks --stack-name text-to-sql-chatbot --region ap-south-1 2>&1 | grep -q "ROLLBACK_COMPLETE"; then
+            echo "Stack is in ROLLBACK_COMPLETE state. Deleting stack before redeployment..."
+            aws cloudformation delete-stack --stack-name text-to-sql-chatbot --region ap-south-1
+            echo "Waiting for stack deletion to complete..."
+            aws cloudformation wait stack-delete-complete --stack-name text-to-sql-chatbot --region ap-south-1
+            echo "Stack deletion completed."
+          elif aws cloudformation describe-stacks --stack-name text-to-sql-chatbot --region ap-south-1 2>&1 | grep -q "does not exist"; then
+            echo "Stack does not exist. Proceeding with deployment."
+          else
+            echo "Stack exists but is not in ROLLBACK_COMPLETE state. Proceeding with update."
+          fi
+      
       - name: Debug - Check S3 Bucket
         run: |
           # Create S3 bucket for deployment if it doesn't exist
