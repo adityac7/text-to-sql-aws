@@ -21,7 +21,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ap-south-1
       
       - name: Prepare Lambda package
         run: |
@@ -35,7 +35,8 @@ jobs:
             --stack-name text-to-sql-chatbot \
             --capabilities CAPABILITY_IAM \
             --parameter-overrides \
-              SecretName=text-to-sql-chatbot-secrets
+              SecretName=text-to-sql-chatbot-secrets \
+            --region ap-south-1
       
       - name: Get deployment outputs
         id: get-outputs
@@ -44,7 +45,8 @@ jobs:
           OUTPUTS=$(aws cloudformation describe-stacks \
             --stack-name text-to-sql-chatbot \
             --query "Stacks[0].Outputs" \
-            --output json)
+            --output json \
+            --region ap-south-1)
           echo "STACK_OUTPUTS<<EOF" >> $GITHUB_ENV
           echo "$OUTPUTS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
@@ -53,7 +55,8 @@ jobs:
           aws cloudformation describe-stacks \
             --stack-name text-to-sql-chatbot \
             --query "Stacks[0].Outputs" \
-            --output table
+            --output table \
+            --region ap-south-1
       
       - name: Display API Endpoint
         run: |

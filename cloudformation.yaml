@@ -1,7 +1,3 @@
-"""
-CloudFormation template for Text-to-SQL Chatbot AWS deployment
-"""
-
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'Text-to-SQL Chatbot Deployment'
 
