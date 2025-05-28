@@ -23,10 +23,26 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
       
+      - name: Debug - Check S3 Bucket
+        run: |
+          # Create S3 bucket for deployment if it doesn't exist
+          aws s3api create-bucket \
+            --bucket lambda-deployment-$(aws sts get-caller-identity --query Account --output text) \
+            --region ap-south-1 \
+            --create-bucket-configuration LocationConstraint=ap-south-1 || true
+          
+          # List buckets to confirm
+          aws s3 ls
+      
       - name: Prepare Lambda package
         run: |
           chmod +x prepare-lambda.sh
           ./prepare-lambda.sh
+      
+      - name: Debug - Check Lambda Package
+        run: |
+          # Check if Lambda package was created and uploaded
+          aws s3 ls s3://lambda-deployment-$(aws sts get-caller-identity --query Account --output text)/
       
       - name: Deploy CloudFormation stack
         run: |
@@ -37,6 +53,15 @@ jobs:
             --parameter-overrides \
               SecretName=text-to-sql-chatbot-secrets \
             --region ap-south-1
+      
+      - name: Debug - Check Stack Events on Failure
+        if: ${{ failure() }}
+        run: |
+          aws cloudformation describe-stack-events \
+            --stack-name text-to-sql-chatbot \
+            --region ap-south-1 \
+            --query "StackEvents[?contains(ResourceStatus, 'FAILED')].{Status:ResourceStatus,Type:ResourceType,LogicalID:LogicalResourceId,Reason:ResourceStatusReason}" \
+            --output table
       
       - name: Get deployment outputs
         id: get-outputs
