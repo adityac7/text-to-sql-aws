@@ -46,7 +46,7 @@ Resources:
         Variables:
           SECRET_NAME: !Ref SecretName
       Code:
-        S3Bucket: !Sub lambda-deployment-${AWS::AccountId}-ap-south-1
+        S3Bucket: !Sub lambda-deployment-${AWS::AccountId}
         S3Key: text-to-sql-chatbot.zip
 
   # API Gateway

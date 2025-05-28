@@ -4,7 +4,7 @@
 mkdir -p deployment
 
 # Copy application files
-rsync -av --exclude 'venv/' app/ deployment/
+cp -r app/* deployment/
 
 # Install dependencies
 cd deployment
@@ -13,7 +13,10 @@ pip install -r requirements.txt -t .
 # Create zip file
 zip -r ../text-to-sql-chatbot.zip .
 
+# Create S3 bucket for deployment if it doesn't exist
+aws s3api create-bucket --bucket lambda-deployment-$(aws sts get-caller-identity --query Account --output text) --region ap-south-1 --create-bucket-configuration LocationConstraint=ap-south-1
+
 # Upload zip to S3
-aws s3 cp ../text-to-sql-chatbot.zip s3://lambda-deployment-$(aws sts get-caller-identity --query Account --output text)-ap-south-1/ --region ap-south-1
+aws s3 cp ../text-to-sql-chatbot.zip s3://lambda-deployment-$(aws sts get-caller-identity --query Account --output text)/ --region ap-south-1
 
 cd ..
