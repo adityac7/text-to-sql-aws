@@ -29,8 +29,8 @@ CONFIG = {
 
 def get_secrets():
     """Get secrets from AWS Secrets Manager"""
-    secret_name = os.environ.get('SECRET_NAME', 'text-to-sql-chatbot-secrets')
-    region_name = os.environ.get('AWS_REGION', 'us-east-1')
+    secret_name = os.environ.get('SECRET_NAME', 'text-to-sql-chatbot-secret-key')
+    region_name = os.environ.get('AWS_REGION', 'ap-south-1')
     
     # Create a Secrets Manager client
     session = boto3.session.Session()

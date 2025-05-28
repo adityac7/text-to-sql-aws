@@ -83,7 +83,7 @@ Before you begin, make sure you have:
    - `GEMINI_API_KEY`: Your Google Gemini API key (if using)
    - `S3_BUCKET_NAME`: Your S3 bucket name containing the data
 5. Click "Next"
-6. Name your secret "text-to-sql-chatbot-secrets"
+6. Name your secret "text-to-sql-chatbot-secret-key"
 7. Add a description like "API keys for Text-to-SQL Chatbot"
 8. Click "Next" > "Next" > "Store"
 
@@ -143,14 +143,14 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ap-south-1
       
       - name: Deploy CloudFormation stack
         run: |
@@ -159,14 +159,16 @@ jobs:
             --stack-name text-to-sql-chatbot \
             --capabilities CAPABILITY_IAM \
             --parameter-overrides \
-              SecretName=text-to-sql-chatbot-secrets
+              SecretName=text-to-sql-chatbot-secret-key \
+            --region ap-south-1
       
       - name: Get deployment outputs
         run: |
           aws cloudformation describe-stacks \
             --stack-name text-to-sql-chatbot \
             --query "Stacks[0].Outputs" \
-            --output table
+            --output table \
+            --region ap-south-1
 ```
 
 4. Click "Start commit" > "Commit new file"
@@ -198,7 +200,7 @@ Parameters:
   SecretName:
     Type: String
     Description: Name of the secret in AWS Secrets Manager
-    Default: text-to-sql-chatbot-secrets
+    Default: text-to-sql-chatbot-secret-key
 
 Resources:
   # Lambda Function Role
@@ -320,10 +322,10 @@ pip install -r requirements.txt -t .
 zip -r ../text-to-sql-chatbot.zip .
 
 # Create S3 bucket for deployment if it doesn't exist
-aws s3api create-bucket --bucket lambda-deployment-$(aws sts get-caller-identity --query Account --output text) --region us-east-1
+aws s3api create-bucket --bucket lambda-deployment-$(aws sts get-caller-identity --query Account --output text) --region ap-south-1 --create-bucket-configuration LocationConstraint=ap-south-1
 
 # Upload zip to S3
-aws s3 cp ../text-to-sql-chatbot.zip s3://lambda-deployment-$(aws sts get-caller-identity --query Account --output text)/
+aws s3 cp ../text-to-sql-chatbot.zip s3://lambda-deployment-$(aws sts get-caller-identity --query Account --output text)/ --region ap-south-1
 
 cd ..
 ```
@@ -348,19 +350,19 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: '3.9'
       
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ap-south-1
       
       - name: Prepare Lambda package
         run: |
@@ -374,14 +376,16 @@ jobs:
             --stack-name text-to-sql-chatbot \
             --capabilities CAPABILITY_IAM \
             --parameter-overrides \
-              SecretName=text-to-sql-chatbot-secrets
+              SecretName=text-to-sql-chatbot-secret-key \
+            --region ap-south-1
       
       - name: Get deployment outputs
         run: |
           aws cloudformation describe-stacks \
             --stack-name text-to-sql-chatbot \
             --query "Stacks[0].Outputs" \
-            --output table
+            --output table \
+            --region ap-south-1
 ```
 
 4. Commit the changes
@@ -399,7 +403,7 @@ jobs:
 
 1. Once the workflow completes successfully, check the workflow logs
 2. Find the "Get deployment outputs" step
-3. Copy the API endpoint URL (it will look like `https://abc123def.execute-api.us-east-1.amazonaws.com/prod/api`)
+3. Copy the API endpoint URL (it will look like `https://abc123def.execute-api.ap-south-1.amazonaws.com/prod/api`)
 
 ![Deployment Outputs](images/github-deployment-outputs.png)
 

@@ -34,7 +34,7 @@ class BedrockClaudeProvider(LLMProvider):
         self.session = boto3.Session()
         self.bedrock_runtime = self.session.client(
             service_name='bedrock-runtime',
-            region_name=os.environ.get('AWS_REGION', 'us-east-1')
+            region_name=os.environ.get('AWS_REGION', 'ap-south-1')
         )
     
     def generate_sql(self, question, schema, sample_data=None):
