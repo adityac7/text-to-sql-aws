@@ -54,6 +54,16 @@ jobs:
           chmod +x prepare-lambda.sh
           ./prepare-lambda.sh
       
+      - name: Debug - List Zip Contents
+        if: always()
+        run: |
+          echo "Listing top-level contents of text-to-sql-chatbot.zip:"
+          ls -l text-to-sql-chatbot.zip
+          unzip -l text-to-sql-chatbot.zip | head -n 20
+          echo "-------------------------------------"
+          echo "Checking for flask specifically in zip:"
+          unzip -l text-to-sql-chatbot.zip | grep -i flask || echo "Flask not found in zip list"
+      
       - name: Debug - Check Lambda Package
         run: |
           # Check if Lambda package was created and uploaded
