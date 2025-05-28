@@ -15,16 +15,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 # Import our modules
 from src.models.llm_provider import get_provider
 from src.models.s3_data_access import S3DataAccess
+from src.routes.api import CONFIG as api_route_config # << NEW IMPORT
 
 # Initialize Flask app
 app = Flask(__name__)
 
-# Global configuration
+# Global configuration for main.py (primarily for app setup if needed)
 CONFIG = {
     'default_provider': 'bedrock',
     'default_model': 'anthropic.claude-3-sonnet-20240229-v1:0',
-    'bucket_name': None,
-    'api_keys': {}
+    'bucket_name': None, # This will be updated by secrets
+    'api_keys': {}      # This will be updated by secrets
 }
 
 def get_secrets():
@@ -57,6 +58,8 @@ def get_secrets():
 
 # Load secrets on startup
 secrets = get_secrets()
+
+# Update main.py's local CONFIG (might be used by Flask app directly if needed)
 if 'S3_BUCKET_NAME' in secrets:
     CONFIG['bucket_name'] = secrets['S3_BUCKET_NAME']
 if 'OPENAI_API_KEY' in secrets:
@@ -64,8 +67,23 @@ if 'OPENAI_API_KEY' in secrets:
 if 'GEMINI_API_KEY' in secrets:
     CONFIG['api_keys']['gemini'] = secrets['GEMINI_API_KEY']
 
-# Import routes
-from src.routes.api import api_bp
+# << START OF NEW LOGIC TO UPDATE API ROUTES CONFIG >>
+# Propagate loaded secrets to the CONFIG in app.src.routes.api
+if 'S3_BUCKET_NAME' in secrets:
+    api_route_config['bucket_name'] = secrets['S3_BUCKET_NAME']
+
+# Ensure api_route_config['api_keys'] exists and is a dictionary before updating
+if 'api_keys' not in api_route_config or not isinstance(api_route_config['api_keys'], dict):
+    api_route_config['api_keys'] = {}
+
+if 'OPENAI_API_KEY' in secrets:
+    api_route_config['api_keys']['openai'] = secrets['OPENAI_API_KEY']
+if 'GEMINI_API_KEY' in secrets:
+    api_route_config['api_keys']['gemini'] = secrets['GEMINI_API_KEY']
+# << END OF NEW LOGIC TO UPDATE API ROUTES CONFIG >>
+
+# Import routes (after config is updated)
+from src.routes.api import api_bp 
 app.register_blueprint(api_bp, url_prefix='/api')
 
 # Serve static files

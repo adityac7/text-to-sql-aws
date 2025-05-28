@@ -59,14 +59,12 @@ jobs:
       - name: Delete bucket in wrong region if needed
         if: steps.check_bucket.outputs.wrong_region == 'true'
         run: |
-          BUCKET_NAME=${{ steps.check_bucket.outputs.bucket_name }}
-          echo "Deleting bucket ${BUCKET_NAME} in wrong region..."
-          
-          # Empty the bucket first
-          aws s3 rm s3://${BUCKET_NAME} --recursive
-          
-          # Delete the bucket
-          aws s3api delete-bucket --bucket ${BUCKET_NAME}
+          # Create S3 bucket for deployment if it doesn't exist
+          aws s3api create-bucket \
+            --bucket lambda-deployment-$(aws sts get-caller-identity --query Account --output text)-ap-south-1 \
+            --region ap-south-1 \
+            --create-bucket-configuration LocationConstraint=ap-south-1 || true
+
           
           echo "Bucket deleted successfully"
           
@@ -78,19 +76,21 @@ jobs:
           chmod +x prepare-lambda.sh
           ./prepare-lambda.sh
       
-      - name: Verify S3 bucket and Lambda package
+      - name: Debug - List Zip Contents
+        if: always()
         run: |
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          BUCKET_NAME="lambda-deployment-${ACCOUNT_ID}"
-          
-          echo "Verifying S3 bucket exists in ap-south-1..."
-          aws s3api get-bucket-location --bucket ${BUCKET_NAME}
-          
-          echo "Listing bucket contents..."
-          aws s3 ls s3://${BUCKET_NAME}/
-          
-          echo "Verifying Lambda package exists..."
-          aws s3api head-object --bucket ${BUCKET_NAME} --key text-to-sql-chatbot.zip || echo "Lambda package not found!"
+          echo "Listing top-level contents of text-to-sql-chatbot.zip:"
+          ls -l text-to-sql-chatbot.zip
+          unzip -l text-to-sql-chatbot.zip | head -n 20
+          echo "-------------------------------------"
+          echo "Checking for flask specifically in zip:"
+          unzip -l text-to-sql-chatbot.zip | grep -i flask || echo "Flask not found in zip list"
+      
+      - name: Debug - Check Lambda Package
+        run: |
+          # Check if Lambda package was created and uploaded
+          aws s3 ls s3://lambda-deployment-$(aws sts get-caller-identity --query Account --output text)-ap-south-1/
+
       
       - name: Deploy CloudFormation stack
         run: |
