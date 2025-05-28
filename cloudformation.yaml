@@ -5,7 +5,7 @@ Parameters:
   SecretName:
     Type: String
     Description: Name of the secret in AWS Secrets Manager
-    Default: text-to-sql-chatbot-secrets
+    Default: text-to-sql-chatbot-secret-key
 
 Resources:
   # Lambda Function Role
