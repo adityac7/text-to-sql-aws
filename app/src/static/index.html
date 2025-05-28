@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text-to-SQL Chatbot</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        .chat-container {
+            height: calc(100vh - 16rem);
+        }
+        .results-container {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .code-block {
+            background-color: #f8f8f8;
+            border-radius: 5px;
+            padding: 10px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="container mx-auto px-4 py-8">
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-center text-blue-600">Text-to-SQL Chatbot</h1>
+            <p class="text-center text-gray-600">Ask questions about your data in natural language</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <!-- Settings Panel -->
+            <div class="lg:col-span-1 bg-white rounded-lg shadow p-4">
+                <h2 class="text-xl font-semibold mb-4">Settings</h2>
+                
+                <!-- S3 Bucket Configuration -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">S3 Bucket Name</label>
+                    <input type="text" id="bucket-name" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500" placeholder="your-bucket-name">
+                </div>
+                
+                <!-- Date Range Selection -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Date Range</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-xs text-gray-500">Start Date</label>
+                            <input type="date" id="start-date" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500">End Date</label>
+                            <input type="date" id="end-date" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- LLM Provider Selection -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">LLM Provider</label>
+                    <select id="provider-select" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <option value="bedrock">AWS Bedrock Claude</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="gemini">Google Gemini</option>
+                    </select>
+                </div>
+                
+                <!-- Model Selection -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Model</label>
+                    <select id="model-select" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <!-- Will be populated based on provider selection -->
+                    </select>
+                </div>
+                
+                <!-- API Key Input (conditionally shown) -->
+                <div id="api-key-container" class="mb-4 hidden">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                    <input type="password" id="api-key" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500" placeholder="Enter your API key">
+                </div>
+                
+                <!-- Save Settings Button -->
+                <button id="save-settings" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition duration-300">
+                    Save Settings
+                </button>
+            </div>
+            
+            <!-- Chat and Results Panel -->
+            <div class="lg:col-span-3">
+                <!-- Chat Interface -->
+                <div class="bg-white rounded-lg shadow mb-6">
+                    <div id="chat-messages" class="chat-container p-4 overflow-y-auto">
+                        <div class="flex items-start mb-4">
+                            <div class="flex-shrink-0 bg-blue-500 rounded-full w-8 h-8 flex items-center justify-center text-white">
+                                <i class="fas fa-robot"></i>
+                            </div>
+                            <div class="ml-3 bg-blue-100 rounded-lg py-2 px-4 max-w-3xl">
+                                <p>Hello! I'm your Text-to-SQL assistant. Ask me questions about your data, and I'll generate SQL queries to find the answers.</p>
+                                <p class="mt-1 text-sm text-gray-600">Example: "What are the top 5 products by sales in January 2025?"</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="border-t p-4">
+                        <div class="flex">
+                            <input type="text" id="user-input" class="flex-grow px-3 py-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-blue-500 focus:border-blue-500" placeholder="Ask a question about your data...">
+                            <button id="send-button" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-r-md transition duration-300">
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Results Display -->
+                <div id="results-panel" class="bg-white rounded-lg shadow p-4 hidden">
+                    <h3 class="text-lg font-semibold mb-2">Results</h3>
+                    
+                    <!-- SQL Query -->
+                    <div class="mb-4">
+                        <h4 class="text-sm font-medium text-gray-700 mb-1">SQL Query</h4>
+                        <div id="sql-query" class="code-block text-sm"></div>
+                    </div>
+                    
+                    <!-- Data Results -->
+                    <div class="mb-4">
+                        <h4 class="text-sm font-medium text-gray-700 mb-1">Data</h4>
+                        <div class="results-container">
+                            <table id="results-table" class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr id="results-header"></tr>
+                                </thead>
+                                <tbody id="results-body" class="bg-white divide-y divide-gray-200"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize variables
+            let currentProvider = 'bedrock';
+            let availableProviders = [];
+            
+            // DOM elements
+            const providerSelect = document.getElementById('provider-select');
+            const modelSelect = document.getElementById('model-select');
+            const apiKeyContainer = document.getElementById('api-key-container');
+            const apiKeyInput = document.getElementById('api-key');
+            const saveSettingsBtn = document.getElementById('save-settings');
+            const bucketNameInput = document.getElementById('bucket-name');
+            const startDateInput = document.getElementById('start-date');
+            const endDateInput = document.getElementById('end-date');
+            const chatMessages = document.getElementById('chat-messages');
+            const userInput = document.getElementById('user-input');
+            const sendButton = document.getElementById('send-button');
+            const resultsPanel = document.getElementById('results-panel');
+            const sqlQuery = document.getElementById('sql-query');
+            const resultsHeader = document.getElementById('results-header');
+            const resultsBody = document.getElementById('results-body');
+            
+            // Set default dates (last 30 days)
+            const today = new Date();
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(today.getDate() - 30);
+            
+            startDateInput.valueAsDate = thirtyDaysAgo;
+            endDateInput.valueAsDate = today;
+            
+            // Fetch available providers and models
+            fetchProviders();
+            
+            // Event listeners
+            providerSelect.addEventListener('change', handleProviderChange);
+            saveSettingsBtn.addEventListener('click', saveSettings);
+            sendButton.addEventListener('click', sendMessage);
+            userInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            // Functions
+            function fetchProviders() {
+                fetch('/api/providers')
+                    .then(response => response.json())
+                    .then(data => {
+                        availableProviders = data.providers;
+                        updateModelOptions();
+                    })
+                    .catch(error => {
+                        console.error('Error fetching providers:', error);
+                        addBotMessage('Error loading providers. Please check your connection and try again.');
+                    });
+            }
+            
+            function handleProviderChange() {
+                currentProvider = providerSelect.value;
+                updateModelOptions();
+                
+                // Show/hide API key input based on provider
+                const provider = availableProviders.find(p => p.name === currentProvider);
+                if (provider && provider.requires_key) {
+                    apiKeyContainer.classList.remove('hidden');
+                } else {
+                    apiKeyContainer.classList.add('hidden');
+                }
+            }
+            
+            function updateModelOptions() {
+                // Clear existing options
+                modelSelect.innerHTML = '';
+                
+                // Find the selected provider
+                const provider = availableProviders.find(p => p.name === currentProvider);
+                
+                if (provider && provider.models) {
+                    // Add model options
+                    provider.models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model.id;
+                        option.textContent = model.name;
+                        modelSelect.appendChild(option);
+                    });
+                }
+            }
+            
+            function saveSettings() {
+                const bucketName = bucketNameInput.value.trim();
+                const provider = providerSelect.value;
+                const model = modelSelect.value;
+                const apiKey = apiKeyInput.value.trim();
+                
+                if (!bucketName) {
+                    addBotMessage('Please enter an S3 bucket name.');
+                    return;
+                }
+                
+                // Prepare config data
+                const configData = {
+                    bucket_name: bucketName,
+                    provider: provider,
+                    model: model
+                };
+                
+                // Add API key if provided
+                if (apiKey) {
+                    configData.api_keys = {
+                        [provider]: apiKey
+                    };
+                }
+                
+                // Save settings
+                fetch('/api/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(configData)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    addBotMessage('Settings saved successfully! You can now ask questions about your data.');
+                })
+                .catch(error => {
+                    console.error('Error saving settings:', error);
+                    addBotMessage('Error saving settings. Please try again.');
+                });
+            }
+            
+            function sendMessage() {
+                const question = userInput.value.trim();
+                
+                if (!question) return;
+                
+                // Add user message to chat
+                addUserMessage(question);
+                
+                // Clear input
+                userInput.value = '';
+                
+                // Show loading indicator
+                addLoadingMessage();
+                
+                // Get date range
+                const startDate = startDateInput.value;
+                const endDate = endDateInput.value;
+                
+                // Send query to backend
+                fetch('/api/query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        question: question,
+                        start_date: startDate,
+                        end_date: endDate,
+                        provider: providerSelect.value,
+                        model: modelSelect.value
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Remove loading message
+                    removeLoadingMessage();
+                    
+                    if (data.error) {
+                        addBotMessage(`Error: ${data.error}`);
+                        return;
+                    }
+                    
+                    // Display results
+                    addBotMessage(data.explanation);
+                    displayResults(data);
+                })
+                .catch(error => {
+                    // Remove loading message
+                    removeLoadingMessage();
+                    
+                    console.error('Error processing query:', error);
+                    addBotMessage('Error processing your query. Please check your settings and try again.');
+                });
+            }
+            
+            function addUserMessage(message) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'flex items-start mb-4 justify-end';
+                messageDiv.innerHTML = `
+                    <div class="mr-3 bg-blue-500 rounded-lg py-2 px-4 max-w-3xl text-white">
+                        <p>${escapeHtml(message)}</p>
+                    </div>
+                    <div class="flex-shrink-0 bg-gray-300 rounded-full w-8 h-8 flex items-center justify-center">
+                        <i class="fas fa-user"></i>
+                    </div>
+                `;
+                chatMessages.appendChild(messageDiv);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            function addBotMessage(message) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'flex items-start mb-4';
+                messageDiv.innerHTML = `
+                    <div class="flex-shrink-0 bg-blue-500 rounded-full w-8 h-8 flex items-center justify-center text-white">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <div class="ml-3 bg-blue-100 rounded-lg py-2 px-4 max-w-3xl">
+                        <p>${escapeHtml(message)}</p>
+                    </div>
+                `;
+                chatMessages.appendChild(messageDiv);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            function addLoadingMessage() {
+                const loadingDiv = document.createElement('div');
+                loadingDiv.id = 'loading-message';
+                loadingDiv.className = 'flex items-start mb-4';
+                loadingDiv.innerHTML = `
+                    <div class="flex-shrink-0 bg-blue-500 rounded-full w-8 h-8 flex items-center justify-center text-white">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <div class="ml-3 bg-blue-100 rounded-lg py-2 px-4">
+                        <div class="flex items-center">
+                            <div class="loading mr-2"></div>
+                            <p>Processing your query...</p>
+                        </div>
+                    </div>
+                `;
+                chatMessages.appendChild(loadingDiv);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            function removeLoadingMessage() {
+                const loadingMessage = document.getElementById('loading-message');
+                if (loadingMessage) {
+                    loadingMessage.remove();
+                }
+            }
+            
+            function displayResults(data) {
+                // Show results panel
+                resultsPanel.classList.remove('hidden');
+                
+                // Display SQL query
+                sqlQuery.textContent = data.sql_query;
+                
+                // Display results table
+                if (data.results && data.results.length > 0) {
+                    // Get column names from first result
+                    const columns = Object.keys(data.results[0]);
+                    
+                    // Create header
+                    resultsHeader.innerHTML = '';
+                    columns.forEach(column => {
+                        const th = document.createElement('th');
+                        th.className = 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
+                        th.textContent = column;
+                        resultsHeader.appendChild(th);
+                    });
+                    
+                    // Create rows
+                    resultsBody.innerHTML = '';
+                    data.results.forEach(row => {
+                        const tr = document.createElement('tr');
+                        
+                        columns.forEach(column => {
+                            const td = document.createElement('td');
+                            td.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-500';
+                            td.textContent = row[column];
+                            tr.appendChild(td);
+                        });
+                        
+                        resultsBody.appendChild(tr);
+                    });
+                } else {
+                    resultsHeader.innerHTML = '';
+                    resultsBody.innerHTML = '<tr><td class="px-6 py-4 text-sm text-gray-500">No results found</td></tr>';
+                }
+                
+                // Scroll to results
+                resultsPanel.scrollIntoView({ behavior: 'smooth' });
+            }
+            
+            function escapeHtml(unsafe) {
+                return unsafe
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#039;");
+            }
+        });
+    </script>
+</body>
+</html>
