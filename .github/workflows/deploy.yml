@@ -23,83 +23,117 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
       
-      - name: Check and delete stack if in ROLLBACK_COMPLETE state
+      - name: Check for existing S3 bucket in wrong region
+        id: check_bucket
         run: |
-          # Check if stack exists and is in ROLLBACK_COMPLETE state
-          if aws cloudformation describe-stacks --stack-name text-to-sql-chatbot --region ap-south-1 2>&1 | grep -q "ROLLBACK_COMPLETE"; then
-            echo "Stack is in ROLLBACK_COMPLETE state. Deleting stack before redeployment..."
-            aws cloudformation delete-stack --stack-name text-to-sql-chatbot --region ap-south-1
-            echo "Waiting for stack deletion to complete..."
-            aws cloudformation wait stack-delete-complete --stack-name text-to-sql-chatbot --region ap-south-1
-            echo "Stack deletion completed."
-          elif aws cloudformation describe-stacks --stack-name text-to-sql-chatbot --region ap-south-1 2>&1 | grep -q "does not exist"; then
-            echo "Stack does not exist. Proceeding with deployment."
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET_NAME="lambda-deployment-${ACCOUNT_ID}"
+          
+          # Check if bucket exists in any region
+          if aws s3api head-bucket --bucket ${BUCKET_NAME} 2>/dev/null; then
+            echo "Bucket exists, checking region..."
+            
+            # Get bucket location
+            BUCKET_REGION=$(aws s3api get-bucket-location --bucket ${BUCKET_NAME} --query LocationConstraint --output text)
+            
+            # If null or empty, it's in us-east-1
+            if [ "$BUCKET_REGION" == "None" ] || [ -z "$BUCKET_REGION" ]; then
+              BUCKET_REGION="us-east-1"
+            fi
+            
+            echo "Bucket region: ${BUCKET_REGION}"
+            
+            if [ "$BUCKET_REGION" != "ap-south-1" ]; then
+              echo "Bucket exists in wrong region (${BUCKET_REGION}), will delete and recreate"
+              echo "wrong_region=true" >> $GITHUB_OUTPUT
+              echo "bucket_name=${BUCKET_NAME}" >> $GITHUB_OUTPUT
+            else
+              echo "Bucket exists in correct region (ap-south-1)"
+              echo "wrong_region=false" >> $GITHUB_OUTPUT
+            fi
           else
-            echo "Stack exists but is not in ROLLBACK_COMPLETE state. Proceeding with update."
+            echo "Bucket does not exist, will create new"
+            echo "wrong_region=false" >> $GITHUB_OUTPUT
           fi
       
-      - name: Debug - Check S3 Bucket
+      - name: Delete bucket in wrong region if needed
+        if: steps.check_bucket.outputs.wrong_region == 'true'
         run: |
-          # Create S3 bucket for deployment if it doesn't exist
-          aws s3api create-bucket \
-            --bucket lambda-deployment-$(aws sts get-caller-identity --query Account --output text) \
-            --region ap-south-1 \
-            --create-bucket-configuration LocationConstraint=ap-south-1 || true
+          BUCKET_NAME=${{ steps.check_bucket.outputs.bucket_name }}
+          echo "Deleting bucket ${BUCKET_NAME} in wrong region..."
           
-          # List buckets to confirm
-          aws s3 ls
+          # Empty the bucket first
+          aws s3 rm s3://${BUCKET_NAME} --recursive
+          
+          # Delete the bucket
+          aws s3api delete-bucket --bucket ${BUCKET_NAME}
+          
+          echo "Bucket deleted successfully"
+          
+          # Wait a moment for deletion to propagate
+          sleep 10
       
       - name: Prepare Lambda package
         run: |
           chmod +x prepare-lambda.sh
           ./prepare-lambda.sh
       
-      - name: Debug - Check Lambda Package
+      - name: Verify S3 bucket and Lambda package
         run: |
-          # Check if Lambda package was created and uploaded
-          aws s3 ls s3://lambda-deployment-$(aws sts get-caller-identity --query Account --output text)/
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET_NAME="lambda-deployment-${ACCOUNT_ID}"
+          
+          echo "Verifying S3 bucket exists in ap-south-1..."
+          aws s3api get-bucket-location --bucket ${BUCKET_NAME}
+          
+          echo "Listing bucket contents..."
+          aws s3 ls s3://${BUCKET_NAME}/
+          
+          echo "Verifying Lambda package exists..."
+          aws s3api head-object --bucket ${BUCKET_NAME} --key text-to-sql-chatbot.zip || echo "Lambda package not found!"
       
       - name: Deploy CloudFormation stack
         run: |
+          # Check if stack exists and is in ROLLBACK_COMPLETE state
+          if aws cloudformation describe-stacks --stack-name text-to-sql-chatbot --region ap-south-1 2>/dev/null | grep -q "ROLLBACK_COMPLETE"; then
+            echo "Stack is in ROLLBACK_COMPLETE state, deleting it first..."
+            aws cloudformation delete-stack --stack-name text-to-sql-chatbot --region ap-south-1
+            echo "Waiting for stack deletion to complete..."
+            aws cloudformation wait stack-delete-complete --stack-name text-to-sql-chatbot --region ap-south-1
+          fi
+          
           aws cloudformation deploy \
             --template-file cloudformation.yaml \
             --stack-name text-to-sql-chatbot \
             --capabilities CAPABILITY_IAM \
             --parameter-overrides \
-              SecretName=text-to-sql-chatbot-secrets \
+              SecretName=text-to-sql-chatbot-secret-key \
             --region ap-south-1
       
-      - name: Debug - Check Stack Events on Failure
-        if: ${{ failure() }}
-        run: |
-          aws cloudformation describe-stack-events \
-            --stack-name text-to-sql-chatbot \
-            --region ap-south-1 \
-            --query "StackEvents[?contains(ResourceStatus, 'FAILED')].{Status:ResourceStatus,Type:ResourceType,LogicalID:LogicalResourceId,Reason:ResourceStatusReason}" \
-            --output table
-      
       - name: Get deployment outputs
-        id: get-outputs
+        id: outputs
         run: |
-          # Using the new environment file approach instead of set-output
-          OUTPUTS=$(aws cloudformation describe-stacks \
-            --stack-name text-to-sql-chatbot \
-            --query "Stacks[0].Outputs" \
-            --output json \
-            --region ap-south-1)
-          echo "STACK_OUTPUTS<<EOF" >> $GITHUB_ENV
+          OUTPUTS=$(aws cloudformation describe-stacks --stack-name text-to-sql-chatbot --query "Stacks[0].Outputs" --output json --region ap-south-1)
+          echo "outputs<<EOF" >> $GITHUB_ENV
           echo "$OUTPUTS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
           
-          # Display outputs in table format for readability in logs
-          aws cloudformation describe-stacks \
-            --stack-name text-to-sql-chatbot \
-            --query "Stacks[0].Outputs" \
-            --output table \
-            --region ap-south-1
+          # Display outputs in table format for readability
+          aws cloudformation describe-stacks --stack-name text-to-sql-chatbot --query "Stacks[0].Outputs" --output table --region ap-south-1
+          
+          # Extract API endpoint for easy access
+          API_ENDPOINT=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="ApiEndpoint") | .OutputValue')
+          echo "API Endpoint: $API_ENDPOINT"
       
-      - name: Display API Endpoint
+      - name: Display deployment results
         run: |
-          API_ENDPOINT=$(echo '${{ env.STACK_OUTPUTS }}' | jq -r '.[] | select(.OutputKey=="ApiEndpoint") | .OutputValue')
-          echo "Your API is deployed at: $API_ENDPOINT"
-          echo "API_ENDPOINT=$API_ENDPOINT" >> $GITHUB_ENV
+          echo "Deployment completed successfully!"
+          echo "API Endpoint: $(echo '${{ env.outputs }}' | jq -r '.[] | select(.OutputKey=="ApiEndpoint") | .OutputValue')"
+      
+      - name: Troubleshooting on failure
+        if: failure()
+        run: |
+          echo "Deployment failed. Collecting troubleshooting information..."
+          
+          # Get stack events for debugging
+          aws cloudformation describe-stack-events --stack-name text-to-sql-chatbot --region ap-south-1 --query "StackEvents[?ResourceStatus=='CREATE_FAILED' || ResourceStatus=='UPDATE_FAILED'].{Resource:LogicalResourceId, Status:ResourceStatus, Reason:ResourceStatusReason}" --output table
