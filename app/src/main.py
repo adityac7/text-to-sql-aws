@@ -99,8 +99,14 @@ def lambda_handler(event, context):
         'wsgi.run_once': False,
     }
     
-    # Handle request with Flask
-    response = app.handle_request(environ)
+    # Handle request with Flask using WSGI interface
+    from werkzeug.test import EnvironBuilder
+
+    builder = EnvironBuilder(**environ)
+    env = builder.get_environ()
+    with app.request_context(env):
+        rv = app.full_dispatch_request()
+        response = app.make_response(rv)
     
     # Convert Flask response to Lambda response format
     return {
